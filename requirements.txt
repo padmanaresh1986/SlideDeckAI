@@ -1,0 +1,4 @@
+mesop
+python-dotenv
+requests
+python-pptx
