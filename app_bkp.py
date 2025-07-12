@@ -574,31 +574,27 @@ def on_generate_slides(e: me.ClickEvent):
     state.is_generating = True
     state.error_message = ""
     state.slides = []
-    state.generated_pptx = None  # Reset previous PPTX
-    state.download_ready = False  # Reset download state
-
     try:
-        # Generate slides (using your existing logic)
-        # For demo purposes, keeping your mock data
-        state.slides = [
-            SlideData(title='Introduction to Risk Management in Banking',
-                      content='''• Key point 1 about Introduction to Risk Management in Banking\n• Important aspect to consider\n• Benefits and advantages\n• Future implications''',
-                      image_placeholder='https://via.placeholder.com/400x300/cccccc/666666?text=Image+Placeholder'),
-            SlideData(title='Types of Risks in Banking: Understanding the Landscape',
-                      content='• Key point 1 about Types of Risks in Banking: Understanding the Landscape\n• Important aspect to consider\n• Benefits and advantages\n• Future implications',
-                      image_placeholder='https://via.placeholder.com/400x300/cccccc/666666?text=Image+Placeholder')
-        ]
+        # llm_client = LLMClient()
+        # slides = llm_client.generate_slides(
+        #     state.slide_topics,
+        #     state.config.content_format,
+        #     state.config.audience,
+        #     state.config.tone,
+        #     state.config.scene
+        # )
+        # state.slides = slides
+        state.slides = [SlideData(title='Introduction to Risk Management in Banking',
+                                 content='''• Key point 1 about Introduction to Risk Management in Banking\n• Important aspect to consider\n• Benefits and advantages\n• Future implications''',
+                                 image_placeholder='https://via.placeholder.com/400x300/cccccc/666666?text=Image+Placeholder'),
+                       SlideData(title='Types of Risks in Banking: Understanding the Landscape',
+                                 content='• Key point 1 about Types of Risks in Banking: Understanding the Landscape\n• Important aspect to consider\n• Benefits and advantages\n• Future implications',
+                                 image_placeholder='https://via.placeholder.com/400x300/cccccc/666666?text=Image+Placeholder')]
+
 
         # Generate PPTX
         exporter = PPTXExporter(state.config)
         state.generated_pptx = exporter.create_presentation(state.slides)
-
-        # Prepare download immediately
-        if state.generated_pptx:
-            topic_clean = state.config.topic[:30].replace(' ', '_').replace('/', '_').replace('\\', '_')
-            state.download_filename = f"presentation_{topic_clean}.pptx"
-            state.download_ready = True
-            state.error_message = "✅ Presentation generated successfully!"
 
     except Exception as e:
         state.error_message = f"Error generating slides: {str(e)}"
@@ -606,6 +602,20 @@ def on_generate_slides(e: me.ClickEvent):
         state.is_generating = False
 
 
+# def on_download_pptx(e: me.ClickEvent):
+#     state = get_state()
+#     if state.generated_pptx:
+#         # Convert base64 back to bytes for download
+#         pptx_bytes = base64.b64decode(state.generated_pptx)
+#         # In a real Mesop app, you would use me.download_file or similar
+#         # For now, we'll save it locally as an example
+#         filename = f"presentation_{state.config.topic[:30].replace(' ', '_')}.pptx"
+#         try:
+#             with open(filename, 'wb') as f:
+#                 f.write(pptx_bytes)
+#             state.error_message = f"✅ '{filename}' Generated."
+#         except Exception as e:
+#             state.error_message = f"Error saving file: {str(e)}"
 
 
 def on_download_pptx(e: me.ClickEvent):
@@ -1002,107 +1012,7 @@ def slides_preview():
                         )
                     )
 
-        # PowerPoint Preview using iframe (if generated)
-        if state.generated_pptx:
-            # with me.box(style=me.Style(
-            #         background="#f0f0f0",
-            #         border_radius=8,
-            #         padding=me.Padding.all(15),
-            #         margin=me.Margin(bottom=20)
-            # )):
-            #     me.text("PowerPoint Preview", style=me.Style(
-            #         font_size=16,
-            #         font_weight="bold",
-            #         margin=me.Margin(bottom=10)
-            #     ))
-            #
-            #     # Create data URL for PowerPoint preview
-            #     pptx_data_url = f"data:application/vnd.openxmlformats-officedocument.presentationml.presentation;base64,{state.generated_pptx}"
-            #
-            #     # Use Office Online viewer for PowerPoint preview
-            #     office_viewer_url = f"https://view.officeapps.live.com/op/embed.aspx?src={pptx_data_url}"
-            #
-            #     me.html(f'''
-            #         <div style="width: 100%; height: 600px; border: 1px solid #ccc; border-radius: 8px; overflow: hidden;">
-            #             <iframe
-            #                 src="{office_viewer_url}"
-            #                 width="100%"
-            #                 height="100%"
-            #                 frameborder="0"
-            #                 style="border: none;">
-            #                 Your browser does not support iframes. Please download the file to view it.
-            #             </iframe>
-            #         </div>
-            #     ''')
-
-            with me.box(style=me.Style(
-                    background="#f0f0f0",
-                    border_radius=8,
-                    padding=me.Padding.all(15),
-                    margin=me.Margin(bottom=20)
-            )):
-                me.text("PowerPoint Preview", style=me.Style(
-                    font_size=16,
-                    font_weight="bold",
-                    margin=me.Margin(bottom=10)
-                ))
-
-                # Create a carousel-like preview
-                me.html(f'''
-                    <div style="
-                        width: 100%; 
-                        height: 600px; 
-                        border: 2px solid #ccc; 
-                        border-radius: 8px; 
-                        background: white;
-                        display: flex;
-                        flex-direction: column;
-                        box-shadow: 0 4px 8px rgba(0,0,0,0.1);
-                    ">
-                        <div style="
-                            background: #f8f9fa; 
-                            padding: 10px; 
-                            border-bottom: 1px solid #ccc;
-                            font-family: Arial, sans-serif;
-                            font-size: 14px;
-                            color: #555;
-                        ">
-                            📊 PowerPoint Presentation ({len(state.slides)} slides) - Generated Successfully
-                        </div>
-
-                        <div style="
-                            flex: 1;
-                            display: flex;
-                            align-items: center;
-                            justify-content: center;
-                            padding: 40px;
-                            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                            color: white;
-                            font-family: Arial, sans-serif;
-                        ">
-                        </div>
-
-                        <div style="
-                            background: #f8f9fa; 
-                            padding: 15px; 
-                            border-top: 1px solid #ccc;
-                            font-family: Arial, sans-serif;
-                            font-size: 12px;
-                            color: #666;
-                            text-align: center;
-                        ">
-                            💡 Your PowerPoint file is ready for download. The slides below show a text preview.
-                        </div>
-                    </div>
-                ''')
-
-        # Slides grid (text preview)
-        me.text("Text Preview", style=me.Style(
-            font_size=16,
-            font_weight="bold",
-            margin=me.Margin(top=20, bottom=15)
-        ))
-
+        # Slides grid
         for i, slide in enumerate(state.slides):
             with me.box(style=me.Style(
                     background=state.config.background_color,
