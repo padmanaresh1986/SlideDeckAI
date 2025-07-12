@@ -9,12 +9,23 @@ import httpx
 import os
 from io import BytesIO
 import base64
+from dotenv import load_dotenv
+import openai
 
 # PowerPoint generation imports
 from pptx import Presentation
 from pptx.util import Inches, Pt
 from pptx.dml.color import RGBColor
 from pptx.enum.text import PP_ALIGN
+
+# Load environment variables from .env
+load_dotenv()
+
+# Get AI Together API key from environment variable
+ait_api_key = os.getenv("AIT_API_KEY")
+
+if not ait_api_key:
+    raise ValueError("AI Together API key is missing. Please set it in the .env file.")
 
 
 # Data models
@@ -60,7 +71,8 @@ class AppState:
     generated_pptx: Optional[str] = None
     show_topic_breakdown: bool = False
     uploaded_file_content: str = ""
-
+    download_filename: str = ""  # Add this
+    download_ready: bool = False  # Add this
 
 # Presentation options
 AUDIENCE_OPTIONS = {
@@ -124,12 +136,12 @@ TEXT_COLORS = {
 
 # LLM Integration
 class LLMClient:
-    def __init__(self, api_key: str = None, base_url: str = "https://api.openai.com/v1"):
-        self.api_key = api_key or os.getenv("OPENAI_API_KEY", "your-api-key-here")
+    def __init__(self, api_key: str = None, base_url: str = "https://api.together.xyz/v1"):
+        self.api_key = api_key or os.getenv("AIT_API_KEY", "your-api-key-here")
         self.base_url = base_url
-        self.model = "gpt-3.5-turbo"
+        self.model = "meta-llama/Llama-3.3-70B-Instruct-Turbo"
 
-    async def generate_slide_topics(self, topic: str, num_slides: int, audience: str, tone: str, scene: str) -> List[
+    def generate_slide_topics(self, topic: str, num_slides: int, audience: str, tone: str, scene: str) -> List[
         SlideTopic]:
         """Generate slide topics breakdown using LLM API"""
 
@@ -170,42 +182,25 @@ class LLMClient:
         """
 
         try:
-            async with httpx.AsyncClient() as client:
-                response = await client.post(
-                    f"{self.base_url}/chat/completions",
-                    headers={
-                        "Authorization": f"Bearer {self.api_key}",
-                        "Content-Type": "application/json"
-                    },
-                    json={
-                        "model": self.model,
-                        "messages": [
-                            {"role": "user", "content": prompt}
-                        ],
-                        "max_tokens": 1500,
-                        "temperature": 0.7
-                    },
-                    timeout=30.0
-                )
-
-                if response.status_code != 200:
-                    raise Exception(f"API request failed: {response.status_code}")
-
-                result = response.json()
-                content = result["choices"][0]["message"]["content"].strip()
-
-                # Parse JSON response
-                topics_data = json.loads(content)
-
-                return [
-                    SlideTopic(
-                        title=topic_data["title"],
-                        description=topic_data.get("description", ""),
-                        order=topic_data.get("order", i + 1)
-                    )
-                    for i, topic_data in enumerate(topics_data)
+            client = openai.OpenAI(
+                api_key=self.api_key,
+                base_url=self.base_url
+            )
+            response = client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "user", "content": prompt}
                 ]
-
+            )
+            topics_data = json.loads(response.choices[0].message.content)
+            return [
+                SlideTopic(
+                    title=topic_data["title"],
+                    description=topic_data.get("description", ""),
+                    order=topic_data.get("order", i + 1)
+                )
+                for i, topic_data in enumerate(topics_data)
+            ]
         except Exception as e:
             # Fallback to mock data if API fails
             return self._generate_mock_topics(topic, num_slides)
@@ -267,7 +262,7 @@ class LLMClient:
         }
         return contexts.get(scene, contexts["general_scene"])
 
-    async def generate_slides(self, slide_topics: List[SlideTopic], content_format: str, audience: str, tone: str,
+    def generate_slides(self, slide_topics: List[SlideTopic], content_format: str, audience: str, tone: str,
                               scene: str) -> List[SlideData]:
         """Generate slides from slide topics using LLM API"""
         format_instruction = (
@@ -313,37 +308,22 @@ class LLMClient:
             """
 
             try:
-                async with httpx.AsyncClient() as client:
-                    response = await client.post(
-                        f"{self.base_url}/chat/completions",
-                        headers={
-                            "Authorization": f"Bearer {self.api_key}",
-                            "Content-Type": "application/json"
-                        },
-                        json={
-                            "model": self.model,
-                            "messages": [
-                                {"role": "user", "content": prompt}
-                            ],
-                            "max_tokens": 800,
-                            "temperature": 0.7
-                        },
-                        timeout=30.0
-                    )
+                client = openai.OpenAI(
+                    api_key=self.api_key,
+                    base_url=self.base_url
+                )
+                response = client.chat.completions.create(
+                    model=self.model,
+                    messages=[
+                        {"role": "user", "content": prompt}
+                    ]
+                )
+                slide_data = json.loads(response.choices[0].message.content)
 
-                    if response.status_code != 200:
-                        raise Exception(f"API request failed: {response.status_code}")
-
-                    result = response.json()
-                    content = result["choices"][0]["message"]["content"].strip()
-
-                    # Parse JSON response
-                    slide_data = json.loads(content)
-
-                    slides_data.append(SlideData(
-                        title=slide_data["title"],
-                        content=slide_data["content"]
-                    ))
+                slides_data.append(SlideData(
+                    title=slide_data["title"],
+                    content=slide_data["content"]
+                ))
 
             except Exception as e:
                 # Fallback to mock data if API fails
@@ -367,40 +347,78 @@ class PPTXExporter:
 
     def create_presentation(self, slides: List[SlideData]) -> str:
         """Create PowerPoint presentation from slides and return as base64 string"""
-        prs = Presentation()
+        print("Creating presentation")
+        # Try to load template from disc first
+        try:
+            template_path = "Title.pptx"
+            if os.path.exists(template_path):
+                prs = Presentation(template_path)
+                print("Using template from disc: template.pptx")
+            else:
+                print("No template found, using blank presentation")
+                prs = Presentation()
+        except Exception as e:
+            print(f"Error loading disc template: {e}, using blank presentation")
+            prs = Presentation()
 
         # Set slide size (16:9 aspect ratio)
         prs.slide_width = Inches(13.33)
         prs.slide_height = Inches(7.5)
 
-        for slide_data in slides:
-            # Add slide with title and content layout
-            slide_layout = prs.slide_layouts[1]  # Title and Content layout
-            slide = prs.slides.add_slide(slide_layout)
+        # Get existing slides from template
+        existing_slides = list(prs.slides)
 
-            # Set background color
-            background = slide.background
-            fill = background.fill
-            fill.solid()
-            bg_color = self._hex_to_rgb(self.config.background_color)
-            fill.fore_color.rgb = RGBColor(*bg_color)
+        for i, slide_data in enumerate(slides):
+            if i < len(existing_slides):
+                # Use existing slide from template
+                slide = existing_slides[i]
+                print(f"Updating existing slide {i + 1}")
+            else:
+                # Add new slide if we have more data than template slides
+                slide_layout = prs.slide_layouts[1]  # Title and Content layout
+                slide = prs.slides.add_slide(slide_layout)
+                print(f"Adding new slide {i + 1}")
 
-            # Set title
-            title = slide.shapes.title
-            title.text = slide_data.title
-            title.text_frame.paragraphs[0].font.size = Pt(32)
-            title.text_frame.paragraphs[0].font.bold = True
-            text_color = self._hex_to_rgb(self.config.text_color)
-            title.text_frame.paragraphs[0].font.color.rgb = RGBColor(*text_color)
+            # Only modify background if it's a new slide or you want to override template
+            if i >= len(existing_slides) or self.config.background_color != "#ffffff":
+                background = slide.background
+                fill = background.fill
+                fill.solid()
+                bg_color = self._hex_to_rgb(self.config.background_color)
+                fill.fore_color.rgb = RGBColor(*bg_color)
 
-            # Set content
-            content = slide.placeholders[1]
-            content.text = slide_data.content
+            # Update title if title placeholder exists
+            if slide.shapes.title:
+                title = slide.shapes.title
+                title.text = slide_data.title
+                title.text_frame.paragraphs[0].font.size = Pt(32)
+                title.text_frame.paragraphs[0].font.bold = True
+                text_color = self._hex_to_rgb(self.config.text_color)
+                title.text_frame.paragraphs[0].font.color.rgb = RGBColor(*text_color)
 
-            # Format content text
-            for paragraph in content.text_frame.paragraphs:
-                paragraph.font.size = Pt(18)
-                paragraph.font.color.rgb = RGBColor(*text_color)
+            # Find and update content placeholder
+            content_placeholder = None
+            for shape in slide.placeholders:
+                if shape.placeholder_format.idx == 1:  # Content placeholder
+                    content_placeholder = shape
+                    break
+
+            if content_placeholder:
+                content_placeholder.text = slide_data.content
+                # Format content text
+                for paragraph in content_placeholder.text_frame.paragraphs:
+                    paragraph.font.size = Pt(18)
+                    text_color = self._hex_to_rgb(self.config.text_color)
+                    paragraph.font.color.rgb = RGBColor(*text_color)
+
+        # If template has more slides than our data, remove excess slides
+        if len(existing_slides) > len(slides):
+            # Remove slides from the end (in reverse order to maintain indices)
+            for i in range(len(existing_slides) - 1, len(slides) - 1, -1):
+                slide_id = existing_slides[i].slide_id
+                prs.part.drop_rel(prs.slides._sldIdLst[i].rId)
+                prs.slides._sldIdLst.remove(prs.slides._sldIdLst[i])
+                print(f"Removed excess slide {i + 1}")
 
         # Save to bytes and convert to base64
         pptx_buffer = BytesIO()
@@ -509,35 +527,30 @@ def on_generate_topics(e: me.ClickEvent):
     state.error_message = ""
     state.slide_topics = []
     state.show_topic_breakdown = False
+    try:
+        # llm_client = LLMClient()
+        # topics = llm_client.generate_slide_topics(
+        #     state.config.topic,
+        #     state.config.num_slides,
+        #     state.config.audience,
+        #     state.config.tone,
+        #     state.config.scene
+        # )
+        topics = [SlideTopic(title='Introduction to Risk Management in Banking',
+                             description='''Overview of the importance of risk management in the banking sector, its role in ensuring financial stability, and the types of risks banks face, inclu
+ding credit, market, operational, and liquidity risks''',
+                             order=1),
+                  SlideTopic(title='Types of Risks in Banking: Understanding the Landscape',
+                             description='''In-depth exploration of credit, market, operational, and liquidity risks, 
+their characteristics, and the potential impact on banking operations, including examples and case studies''',
+                             order=2)]
 
-    # Use asyncio to run the async function
-    import threading
-
-    def generate_topics_async():
-        try:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-
-            llm_client = LLMClient()
-            topics = loop.run_until_complete(llm_client.generate_slide_topics(
-                state.config.topic,
-                state.config.num_slides,
-                state.config.audience,
-                state.config.tone,
-                state.config.scene
-            ))
-            state.slide_topics = topics
-            state.show_topic_breakdown = True
-
-        except Exception as e:
-            state.error_message = f"Error generating topics: {str(e)}"
-        finally:
-            state.is_generating_topics = False
-
-    # Run in a separate thread to avoid blocking the UI
-    thread = threading.Thread(target=generate_topics_async)
-    thread.start()
-
+        state.slide_topics = topics
+        state.show_topic_breakdown = True
+    except Exception as e:
+        state.error_message = f"Error generating topics: {str(e)}"
+    finally:
+        state.is_generating_topics = False
 
 def on_slide_topic_change(index: int, e: me.InputEvent):
     state = get_state()
@@ -561,53 +574,66 @@ def on_generate_slides(e: me.ClickEvent):
     state.is_generating = True
     state.error_message = ""
     state.slides = []
+    try:
+        # llm_client = LLMClient()
+        # slides = llm_client.generate_slides(
+        #     state.slide_topics,
+        #     state.config.content_format,
+        #     state.config.audience,
+        #     state.config.tone,
+        #     state.config.scene
+        # )
+        # state.slides = slides
+        state.slides = [SlideData(title='Introduction to Risk Management in Banking',
+                                 content='''• Key point 1 about Introduction to Risk Management in Banking\n• Important aspect to consider\n• Benefits and advantages\n• Future implications''',
+                                 image_placeholder='https://via.placeholder.com/400x300/cccccc/666666?text=Image+Placeholder'),
+                       SlideData(title='Types of Risks in Banking: Understanding the Landscape',
+                                 content='• Key point 1 about Types of Risks in Banking: Understanding the Landscape\n• Important aspect to consider\n• Benefits and advantages\n• Future implications',
+                                 image_placeholder='https://via.placeholder.com/400x300/cccccc/666666?text=Image+Placeholder')]
 
-    # Use asyncio to run the async function
-    import threading
 
-    def generate_async():
-        try:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
+        # Generate PPTX
+        exporter = PPTXExporter(state.config)
+        state.generated_pptx = exporter.create_presentation(state.slides)
 
-            llm_client = LLMClient()
-            slides = loop.run_until_complete(llm_client.generate_slides(
-                state.slide_topics,
-                state.config.content_format,
-                state.config.audience,
-                state.config.tone,
-                state.config.scene
-            ))
-            state.slides = slides
+    except Exception as e:
+        state.error_message = f"Error generating slides: {str(e)}"
+    finally:
+        state.is_generating = False
 
-            # Generate PPTX
-            exporter = PPTXExporter(state.config)
-            state.generated_pptx = exporter.create_presentation(slides)
 
-        except Exception as e:
-            state.error_message = f"Error generating slides: {str(e)}"
-        finally:
-            state.is_generating = False
-
-    # Run in a separate thread to avoid blocking the UI
-    thread = threading.Thread(target=generate_async)
-    thread.start()
+# def on_download_pptx(e: me.ClickEvent):
+#     state = get_state()
+#     if state.generated_pptx:
+#         # Convert base64 back to bytes for download
+#         pptx_bytes = base64.b64decode(state.generated_pptx)
+#         # In a real Mesop app, you would use me.download_file or similar
+#         # For now, we'll save it locally as an example
+#         filename = f"presentation_{state.config.topic[:30].replace(' ', '_')}.pptx"
+#         try:
+#             with open(filename, 'wb') as f:
+#                 f.write(pptx_bytes)
+#             state.error_message = f"✅ '{filename}' Generated."
+#         except Exception as e:
+#             state.error_message = f"Error saving file: {str(e)}"
 
 
 def on_download_pptx(e: me.ClickEvent):
     state = get_state()
     if state.generated_pptx:
-        # Convert base64 back to bytes for download
-        pptx_bytes = base64.b64decode(state.generated_pptx)
-        # In a real Mesop app, you would use me.download_file or similar
-        # For now, we'll save it locally as an example
-        filename = f"presentation_{state.config.topic[:30].replace(' ', '_')}.pptx"
+        # Generate a clean filename
+        topic_clean = state.config.topic[:30].replace(' ', '_').replace('/', '_').replace('\\', '_')
+        filename = f"presentation_{topic_clean}.pptx"
+
         try:
-            with open(filename, 'wb') as f:
-                f.write(pptx_bytes)
-            state.error_message = f"✅ PPTX file saved as '{filename}' in the current directory!"
+            # Set the download data in state for the UI to use
+            state.download_filename = filename
+            state.download_ready = True
+            state.error_message = f"✅ '{filename}' ready for download."
         except Exception as e:
-            state.error_message = f"Error saving file: {str(e)}"
+            state.error_message = f"Error preparing download: {str(e)}"
+
+
 
 
 # UI Components
@@ -672,19 +698,6 @@ def configuration_panel():
             on_upload=on_file_upload,
             style=me.Style(margin=me.Margin(bottom=10))
         )
-
-        # if state.uploaded_file_content:
-        #     me.button(
-        #         "Use Uploaded Content",
-        #         on_click=on_use_uploaded_content,
-        #         style=me.Style(
-        #             background="#4caf50",
-        #             color="white",
-        #             padding=me.Padding.symmetric(horizontal=15, vertical=8),
-        #             border_radius=4,
-        #             margin=me.Margin(bottom=15)
-        #         )
-        #     )
 
         # Number of slides
         me.input(
@@ -967,16 +980,37 @@ def slides_preview():
             ))
 
             if state.generated_pptx:
-                me.button(
-                    "Download PPTX",
-                    on_click=on_download_pptx,
-                    style=me.Style(
-                        background="#4caf50",
-                        color="white",
-                        padding=me.Padding.symmetric(horizontal=15, vertical=8),
-                        border_radius=4
+                if state.download_ready:
+                    # Create a data URL for direct download
+                    data_url = f"data:application/vnd.openxmlformats-officedocument.presentationml.presentation;base64,{state.generated_pptx}"
+
+                    # Use me.html to create a direct download link
+                    me.html(f'''
+                                    <a href="{data_url}" 
+                                       download="{state.download_filename}"
+                                       style="
+                                           background: #4caf50;
+                                           color: white;
+                                           padding: 8px 15px;
+                                           border-radius: 4px;
+                                           text-decoration: none;
+                                           font-family: Arial, sans-serif;
+                                           font-size: 14px;
+                                       ">
+                                       Download PPTX
+                                    </a>
+                                    ''')
+                else:
+                    me.button(
+                        "Prepare Download",
+                        on_click=on_download_pptx,
+                        style=me.Style(
+                            background="#4caf50",
+                            color="white",
+                            padding=me.Padding.symmetric(horizontal=15, vertical=8),
+                            border_radius=4
+                        )
                     )
-                )
 
         # Slides grid
         for i, slide in enumerate(state.slides):
@@ -987,7 +1021,7 @@ def slides_preview():
                     padding=me.Padding.all(20),
                     margin=me.Margin(bottom=15),
                     border=me.Border.all(me.BorderSide(width=1, color="#e0e0e0", style="solid")),
-                    min_height="200px"
+                    min_height="300px"
             )):
                 me.text(f"Slide {i + 1}", style=me.Style(
                     font_size=12,
@@ -1062,5 +1096,5 @@ def main():
             slides_preview()
 
 
-if __name__ == "__main__":
-    me.run(main)
+# if __name__ == "__main__":
+#     me.run(main)

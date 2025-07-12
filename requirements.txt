@@ -2,3 +2,4 @@ mesop
 python-dotenv
 requests
 python-pptx
+openai
