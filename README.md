@@ -1,5 +1,5 @@
 # SlideDeckAI
-
+https://stackoverflow.com/questions/39015192/cxf-request-http-context-is-not-flushed-between-2-requests
 
 Workshop Agenda: Generative AI Application Integration
 Gen AI Fundamentals
