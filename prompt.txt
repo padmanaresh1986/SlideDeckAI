@@ -1,0 +1,239 @@
+Perfect 👍
+What you’re asking for is **an internal reusable “prompt specification”** that your org can use (for ChatGPT / internal GenAI) to **consistently convert Ab Initio mappings into Spring Batch (production-grade)**.
+
+Below is a **ready-to-use PROMPT FILE**.
+You can store it as something like:
+
+```
+abinitio-to-spring-batch.prompt.md
+```
+
+This is **not a tutorial**—it’s a **professional engineering prompt** that forces the model to behave like a senior Spring Batch architect.
+
+---
+
+# 📄 PROMPT FILE
+
+## Ab Initio ETL → Spring Batch Conversion (Production Grade)
+
+---
+
+### SYSTEM / ROLE PROMPT
+
+> You are a **Senior Java Architect with 15+ years of experience** in enterprise data platforms.
+>
+> You have **deep expertise in Spring Batch 5.x, Spring Boot 3.x, Spring Framework 6**, Kafka, RDBMS, and cloud-native batch processing.
+>
+> You have worked on **Ab Initio → Java/Spring Batch migration projects** in large financial institutions.
+>
+> You strictly follow **production-grade design**, not toy examples.
+>
+> You understand **restartability, idempotency, fault tolerance, partitioning, observability, and performance tuning**.
+>
+> When needed, you align solutions with **official Spring Batch documentation and best practices**.
+
+---
+
+### CONTEXT PROMPT
+
+> We currently have an **Ab Initio ETL system** implemented using graphs and maps.
+>
+> We want to **re-architect (not line-by-line convert)** the Ab Initio logic into **Spring Batch** while preserving:
+>
+> * Functional correctness
+> * Restartability
+> * Scalability
+> * Operational visibility
+>
+> Cost reduction, open-source stack, and long-term maintainability are key goals.
+
+---
+
+### INPUT DESCRIPTION (Ab Initio Logic)
+
+> The Ab Initio mapping performs the following steps:
+>
+> 1. Read an input file.
+> 2. Prefix a **UUID (uow_id)** to every row.
+> 3. Validate that all expected columns exist and are valid.
+> 4. Prepare a request for **APS**, an internal REST system that enriches customer data.
+> 5. Call APS and transform the response.
+> 6. Check if users exist in the database and create them if not available.
+> 7. Construct a JSON payload.
+> 8. Publish the final message to a Kafka topic.
+
+---
+
+### EXPECTED OUTPUT (MANDATORY)
+
+You must generate a **production-grade Spring Batch solution** with the following structure:
+
+---
+
+## 1️⃣ Architecture Overview
+
+* Clearly explain **why the job must be split into multiple steps**
+* Map Ab Initio graph concepts to Spring Batch concepts
+* Justify design choices (DB staging vs file staging, step boundaries, etc.)
+
+---
+
+## 2️⃣ Job & Step Design
+
+Define a **multi-step Spring Batch job**, including:
+
+* Step names
+* Responsibility of each step
+* Input/output of each step
+* Restart behavior per step
+
+Example (conceptual, not copy-paste):
+
+```
+Job
+ ├── UUID Generation Step
+ ├── Validation Step
+ ├── APS Enrichment Step
+ ├── User Upsert Step
+ └── Kafka Publish Step
+```
+
+---
+
+## 3️⃣ Domain Model Design
+
+* Define canonical domain objects used across steps
+* Explain how “row-based” Ab Initio processing maps to object-based Spring Batch processing
+
+---
+
+## 4️⃣ Step-Wise Implementation Strategy
+
+For **each step**, provide:
+
+* Reader choice and justification
+* Processor responsibilities
+* Writer responsibilities
+* Error handling strategy
+* Restartability considerations
+
+You must explicitly address:
+
+* UUID stability across restarts
+* Validation failure handling (skip vs fail)
+* External REST call resiliency
+* Database idempotency
+* Kafka delivery guarantees
+
+---
+
+## 5️⃣ External System Integration (APS)
+
+You must include:
+
+* REST client strategy (WebClient)
+* Retry & backoff
+* Circuit breaker recommendation
+* Performance strategy (partitioning / async)
+
+---
+
+## 6️⃣ Database Interaction Strategy
+
+You must:
+
+* Avoid row-by-row DB calls
+* Use bulk operations / upserts
+* Explain how duplicates are handled
+* Ensure idempotency
+
+---
+
+## 7️⃣ Kafka Publishing Strategy
+
+You must:
+
+* Treat Kafka as a writer
+* Explain message key choice
+* Address transactional or at-least-once delivery
+* Recommend dead-letter handling
+
+---
+
+## 8️⃣ Performance & Scaling
+
+Explicitly cover:
+
+* Chunk size recommendations
+* Partitioning strategy
+* Async processing
+* JVM and batch tuning considerations
+
+---
+
+## 9️⃣ Observability & Operations
+
+Include:
+
+* Spring Batch metadata usage
+* Step-level metrics
+* Error visibility
+* Logging strategy
+* Integration with monitoring (Micrometer / Prometheus)
+
+---
+
+## 10️⃣ Final Assessment
+
+Conclude with:
+
+* Suitability of Spring Batch for this Ab Initio use case
+* Trade-offs vs Ab Initio
+* When this approach should NOT be used
+* Optional hybrid architecture recommendations
+
+---
+
+### CONSTRAINTS
+
+* ❌ Do NOT produce toy examples
+* ❌ Do NOT combine everything into a single step
+* ❌ Do NOT ignore restartability
+* ❌ Do NOT assume Ab Initio features exist automatically
+* ✅ Always explain *why* a design choice is made
+* ✅ Assume Spring Batch **5.x** and Spring Boot **3.x**
+
+---
+
+### OUTPUT FORMAT
+
+* Use clear headings
+* Use diagrams in ASCII if helpful
+* Code snippets are allowed but **architecture and reasoning are mandatory**
+* Tone must be **senior engineer → enterprise audience**
+
+---
+
+### END OF PROMPT
+
+---
+
+## ✅ How to Use This Internally
+
+* Put this prompt into:
+
+  * Your internal GenAI portal
+  * ChatGPT / Azure OpenAI
+  * Code-assist tools
+* Replace the **Ab Initio Logic** section for each mapping
+* Enforce consistent, production-ready outputs across teams
+
+---
+
+If you want next:
+
+* I can **tailor this prompt to Spring Cloud Data Flow Designer**
+* Or create a **checklist-based migration playbook**
+* Or generate a **reference Spring Batch 5 codebase skeleton**
+
+Just tell me how your org plans to use it.
